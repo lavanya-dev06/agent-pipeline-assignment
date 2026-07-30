@@ -1,0 +1,87 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ["**"]        # run lint/test on every push, any branch
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Runs on every push and PR. This is the gate: nothing merges to main
+  # without passing this.
+  # ---------------------------------------------------------------------
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check app/
+
+      - name: Run tests (pytest)
+        run: pytest app/ -q --junitxml=test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.xml
+
+  # ---------------------------------------------------------------------
+  # Only runs after lint-and-test succeeds, and only on a push to main
+  # (i.e. after a PR merge) -- never on feature branches or plain PRs.
+  # ---------------------------------------------------------------------
+  deploy-staging:
+    needs: lint-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.example.com   # replace with real staging URL
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r app/requirements.txt
+
+      - name: Build
+        run: |
+          echo "Build step placeholder — e.g. docker build, or package for the target platform"
+          # docker build -t myapp:${{ github.sha }} app/
+
+      - name: Deploy to staging
+        env:
+          # Secrets pulled from GitHub Actions encrypted secrets (see README
+          # for the full secrets-handling explanation) -- never hardcoded,
+          # never printed, scoped to the 'staging' environment so a
+          # compromised branch can't read prod credentials.
+          STAGING_API_KEY: ${{ secrets.STAGING_API_KEY }}
+          STAGING_DEPLOY_HOST: ${{ secrets.STAGING_DEPLOY_HOST }}
+        run: |
+          echo "Deploy step placeholder — actual command depends on target:"
+          echo "  - Fly.io/Render/Heroku: flyctl deploy / render deploy hook"
+          echo "  - AWS: aws ecs update-service ... or eb deploy"
+          echo "  - Simple VM: rsync + ssh restart, or a webhook-triggered pull"
+          # example: curl -X POST "https://$STAGING_DEPLOY_HOST/deploy" -H "Authorization: Bearer $STAGING_API_KEY"
+
+      - name: Smoke test staging
+        run: |
+          echo "Post-deploy smoke test placeholder — e.g.:"
+          echo "  curl -f https://staging.example.com/health"
